@@ -184,7 +184,7 @@ export default function AgencyPlatform() {
     camp: "", campClient: "", campVisible: true,
     ev: "", evClient: "", evDate: "", evType: "Casamento", evVisible: true,
     task: "",
-    newClient: "", newClientType: "fixo", newClientPhone: "", newClientEmail: "", newClientInstagram: "",
+    newClient: "", newClientType: "fixo", newClientPhone: "", newClientEmail: "", newClientInstagram: "", newClientCreateLogin: false, newClientPassword: "",
     capTitle: "", capClient: "", capType: "foto_video", capDate: "", capStart: "", capEnd: "", capLocation: "", capAddress: "", capResponsible: "", capTeam: "", capBriefing: "", capShotList: "", capEquipment: "", capDrive: "", capDelivery: "", capVisible: true, capNotes: "",
     capTask: "", capTaskVisible: false,
   });
@@ -425,9 +425,14 @@ export default function AgencyPlatform() {
     setF("task", "");
   };
 
-  const addClient = () => {
+  const addClient = async () => {
     const name = forms.newClient.trim();
-    if (!name || clientNames.includes(name)) return;
+    if (!name) return;
+    if (clientNames.includes(name)) {
+      alert("Esse cliente já está cadastrado.");
+      return;
+    }
+
     const row = {
       name,
       client_type: forms.newClientType || "fixo",
@@ -436,8 +441,57 @@ export default function AgencyPlatform() {
       instagram: forms.newClientInstagram || null,
       status: "ativo",
     };
+
+    if (forms.newClientCreateLogin) {
+      if (!row.email) {
+        alert("Para criar acesso, preencha o e-mail do cliente.");
+        return;
+      }
+      if (!forms.newClientPassword || forms.newClientPassword.length < 6) {
+        alert("A senha provisória precisa ter pelo menos 6 caracteres.");
+        return;
+      }
+
+      setSaving(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      try {
+        const response = await fetch("/api/create-client-user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            client: row,
+            create_login: true,
+            password: forms.newClientPassword,
+          }),
+        });
+
+        const result = await response.json();
+        setSaving(false);
+
+        if (!response.ok) {
+          alert(result.error || "Não consegui criar o cliente com acesso.");
+          return;
+        }
+
+        const createdClient = result.client || row;
+        setData({ ...data, clients: [...data.clients, createdClient].sort((a, b) => a.name.localeCompare(b.name)) });
+        setForms({ ...forms, newClient: "", newClientType: "fixo", newClientPhone: "", newClientEmail: "", newClientInstagram: "", newClientCreateLogin: false, newClientPassword: "" });
+        alert("Cliente cadastrado e acesso criado com sucesso.");
+      } catch (error) {
+        console.error(error);
+        setSaving(false);
+        alert("Não consegui chamar a função segura da Vercel. Confira se o arquivo api/create-client-user.js foi enviado e se a Vercel terminou o deploy.");
+      }
+      return;
+    }
+
     setData({ ...data, clients: [...data.clients, row].sort((a, b) => a.name.localeCompare(b.name)) });
-    setForms({ ...forms, newClient: "", newClientType: "fixo", newClientPhone: "", newClientEmail: "", newClientInstagram: "" });
+    setForms({ ...forms, newClient: "", newClientType: "fixo", newClientPhone: "", newClientEmail: "", newClientInstagram: "", newClientCreateLogin: false, newClientPassword: "" });
     run(supabase.from("clients").insert(row));
   };
 
@@ -685,17 +739,34 @@ export default function AgencyPlatform() {
         <div>
           <Card style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 10 }}>Cadastrar cliente</div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 130px 1fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 130px 1fr 1fr 1fr", gap: 8, alignItems: "center" }}>
               <input style={inputStyle} placeholder="Nome do cliente" value={forms.newClient} onChange={(e) => setF("newClient", e.target.value)} />
               <select style={inputStyle} value={forms.newClientType} onChange={(e) => setF("newClientType", e.target.value)}>
                 <option value="fixo">Fixo</option>
                 <option value="aleatorio">Aleatório</option>
               </select>
               <input style={inputStyle} placeholder="Telefone" value={forms.newClientPhone} onChange={(e) => setF("newClientPhone", e.target.value)} />
-              <input style={inputStyle} placeholder="E-mail" value={forms.newClientEmail} onChange={(e) => setF("newClientEmail", e.target.value)} />
+              <input style={inputStyle} placeholder="E-mail do cliente" value={forms.newClientEmail} onChange={(e) => setF("newClientEmail", e.target.value)} />
               <input style={inputStyle} placeholder="Instagram" value={forms.newClientInstagram} onChange={(e) => setF("newClientInstagram", e.target.value)} />
-              <button style={btnStyle} onClick={addClient}>Adicionar</button>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+              {checkboxLabel("criar acesso de login para este cliente", forms.newClientCreateLogin, (v) => setF("newClientCreateLogin", v))}
+              {forms.newClientCreateLogin && (
+                <input
+                  style={{ ...inputStyle, width: isMobile ? "100%" : 220 }}
+                  type="text"
+                  placeholder="Senha provisória"
+                  value={forms.newClientPassword}
+                  onChange={(e) => setF("newClientPassword", e.target.value)}
+                />
+              )}
+              <button style={btnStyle} onClick={addClient}>{forms.newClientCreateLogin ? "Cadastrar e criar acesso" : "Adicionar cliente"}</button>
+            </div>
+            {forms.newClientCreateLogin && (
+              <div style={{ fontSize: 11.5, color: "#76777F", marginTop: 8, lineHeight: 1.5 }}>
+                O cliente vai entrar usando o e-mail informado e essa senha provisória. Depois você pode pedir para ele trocar a senha.
+              </div>
+            )}
           </Card>
 
           {data.clients.map((c) => (
